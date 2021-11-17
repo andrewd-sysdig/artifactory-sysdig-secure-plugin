@@ -835,7 +835,7 @@ class Sysdig {
      * Loads and processes the configuration file
      */
     private void loadConfig() {
-        final String CONFIG_FILE_PATH = "${ctx.artifactoryHome.etcDir}/plugins/webhook.config.json"
+        final String CONFIG_FILE_PATH = "${ctx.artifactoryHome.etcDir}/plugins/SysdigSecurePlugin.properties"
         def inputFile = new File(CONFIG_FILE_PATH)
         def config = new JsonSlurper().parseText(inputFile.text)
         if (config && config.webhooks) {
