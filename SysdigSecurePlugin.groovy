@@ -131,7 +131,7 @@ class Globals {
     static repositories
 }
 
-WebHook.init(ctx, log)
+Sysdig.init(ctx, log)
 
 /**
  * REST APIs for the webhook
@@ -155,7 +155,7 @@ executions {
      * Reload the webhook configuration file
      */
     webhookReload (httpMethod: 'POST') {
-        WebHook.reload()
+        Sysdig.reload()
         message = "Reloaded!\n"
     }
 
@@ -312,15 +312,18 @@ class ResponseFormatter {
     }
 }
 
+/**
+ * Sysdig formatter
+ */
 class SysdigFormatter {
     def format(String event, JsonBuilder data) {
         def builder = new JsonBuilder()
         def json = data.content
         def imagePath
-        if (WebHook.dockerRegistryUrl()) {
-          imagePath = "${WebHook.dockerRegistryUrl()}/${json.docker.image}"
+        if (Sysdig.dockerRegistryUrl()) {
+          imagePath = "${Sysdig.dockerRegistryUrl()}/${json.docker.image}"
         } else {
-          imagePath = "${WebHook.baseUrl()}/${json.repoKey}/${json.docker.image}"
+          imagePath = "${Sysdig.baseUrl()}/${json.repoKey}/${json.docker.image}"
         }
         builder {
           name "${imagePath}"
@@ -338,10 +341,10 @@ class KeelFormatter {
         def builder = new JsonBuilder()
         def json = data.content
         def imagePath
-        if (WebHook.dockerRegistryUrl()) {
-          imagePath = "${WebHook.dockerRegistryUrl()}/${json.docker.image}"
+        if (Sysdig.dockerRegistryUrl()) {
+          imagePath = "${Sysdig.dockerRegistryUrl()}/${json.docker.image}"
         } else {
-          imagePath = "${WebHook.baseUrl()}/${json.repoKey}/${json.docker.image}"
+          imagePath = "${Sysdig.baseUrl()}/${json.repoKey}/${json.docker.image}"
         }
         builder {
           name "${imagePath}"
@@ -372,7 +375,7 @@ class SpinnakerFormatter {
                                     type     : type,
                                     name     : nameVersionDetails.name,
                                     version  : nameVersionDetails.version,
-                                    reference: "${WebHook.baseUrl()}/${json.repoKey}/${json.relPath}"
+                                    reference: "${Sysdig.baseUrl()}/${json.repoKey}/${json.relPath}"
                                 ]
                             ]
                     )
@@ -390,7 +393,7 @@ class SpinnakerFormatter {
                                  type: getPackageType(json.event.repoKey),
                                  name: json.docker.image,
                                  version: json.docker.tag,
-                                 reference: "${WebHook.baseUrl()}/${json.event.repoKey}/${json.docker.image}:${json.docker.tag}"
+                                 reference: "${Sysdig.baseUrl()}/${json.event.repoKey}/${json.docker.image}:${json.docker.tag}"
                          ]
                      ]
                 )
@@ -550,31 +553,31 @@ def dockerEventDecorator(String event, JsonBuilder data) {
  */
 def hook(String event, JsonBuilder data) {
     try {
-        if (WebHook.failedToLoadConfig) {
+        if (Sysdig.failedToLoadConfig) {
             log.error("Failed to load configuration from webhook.config.json. Verify that it is valid JSON.")
             return
         }
-        if (Globals.SUPPORTED_EVENTS.contains(event) && WebHook.active(event)) {
+        if (Globals.SUPPORTED_EVENTS.contains(event) && Sysdig.active(event)) {
             log.trace(data.toString())
             log.info("Webhooks being triggered for event '${event}'")
-            WebHook.run(event, data)
+            Sysdig.run(event, data)
         }
         // Docker decorator should occur after the basic event  even if we don't care about the basic event
         dockerEventDecorator(event, data)
     } catch (Exception ex) {
         // Don't risk failing the event by throwing an exception
-        if (WebHook.debug())
+        if (Sysdig.debug())
             ex.printStackTrace()
         log.error("Webhook threw an exception: " + ex.getMessage())
     }
 }
 
 /**
- * WebHook class for handling grunt work
+ * Sysdig class for handling grunt work
  * config load webhook.properties upon startup or REST API execute/webhookReload
  */
-class WebHook {
-    private static WebHook me
+class Sysdig {
+    private static Sysdig me
     private static final int MAX_TIMEOUT = 60000
     private static final String REPO_KEY_NAME = "repoKey"
     private static final responseFormatters = Globals.RESPONSE_FORMATTER_MATRIX
@@ -815,7 +818,7 @@ class WebHook {
      */
     synchronized static void init(ctx, log) {
         if (me == null) {
-            me = new WebHook()
+            me = new Sysdig()
             me.ctx = ctx
             me.log = log
             failedToLoadConfig = false
