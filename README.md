@@ -17,20 +17,20 @@ Configuration for the plugin is through SysdigSecurePlugin.properties which has 
 
 ```json
 {
-	"sysdig":{
-		"url":"http<s>://<fqdn/ip>:<port>",
-		"token": "<sysdig-secure-token>",
-		"events":[
-			"docker.tagCreated"
-		],
-    "repositories": [
-      "*"
-    ],
-    "path": "*"
-	},
-	"baseurl": "<base.artifactory.url>",
-	"debug":false,
-	"timeout":15000
+   "sysdig":{
+      "url":"http<s>://<fqdn/ip>:<port>",
+      "token":"<sysdig-secure-token>",
+      "events":[
+         "docker.tagCreated"
+      ],
+      "repositories":[
+         "*"
+      ],
+      "path":"*"
+   },
+   "baseurl":"<base.artifactory.url>",
+   "debug":false,
+   "timeout":15000
 }
 ```
 
