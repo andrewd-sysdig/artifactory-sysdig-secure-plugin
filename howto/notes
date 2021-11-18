@@ -1,0 +1,2 @@
+kubectl -n sysdig-admission-controller create secret generic sysdig-admission-controller-registry-auth \
+  --from-file=auth.json

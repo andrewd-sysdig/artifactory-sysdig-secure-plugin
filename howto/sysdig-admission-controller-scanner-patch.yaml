@@ -1,0 +1,18 @@
+spec:
+  template:
+    spec:
+      containers:
+      - name: admission-controller
+        volumeMounts:
+        - mountPath: /config/auth.json
+          name: auth
+          readOnly: true
+          subPath: auth.json
+      volumes:
+      - name: auth
+        secret:
+          defaultMode: 420
+          items:
+          - key: auth.json
+            path: auth.json
+          secretName: sysdig-admission-controller-registry-auth
