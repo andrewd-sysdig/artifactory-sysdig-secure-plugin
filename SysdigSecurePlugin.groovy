@@ -21,18 +21,6 @@ import groovy.json.JsonSlurper
 import java.util.regex.Pattern
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-/**
- * Sysdig Plugin for Artifactory
- *
- * This webhook includes the following components
- * 1. SysdigSecurePlugin.groovy - main script, modify only if needing to change functionality
- * 2. SysdigSecurePlugin.properties - used to configure the plugin for your environment
- *
- * Installation:
- * 1. Configure and copy SysdigSecurePlugin.properties to ARTIFACTORY_HOME/etc/plugins
- * 2. Copy SysdigSecurePlugin.groovy to ARTIFACTORY_HOME/etc/plugins
- *
- */
 
 class Globals {
 
@@ -40,11 +28,6 @@ class Globals {
         "storage": [
             "afterCreate": [ name: "storage.afterCreate", description: "Called after artifact creation operation",
                              humanName: "Artifact created"]
-        ],
-        "execute": [
-            "pingSysdig": [ name: "execute.pingSysdig",
-                             description: "Test connection to Sysdig Scanning Backend",
-                             humanName: "Sysdig ping test"]
         ],
         "docker": [
             "tagCreated": [ name: "docker.tagCreated", description: "Called after a tag is created",
@@ -54,7 +37,7 @@ class Globals {
 
     static final RESPONSE_FORMATTER_MATRIX = [
         default: [
-            description: "Sysdig SaaS default formatter", formatter: new ResponseFormatter ( )
+            description: "Sysdig default formatter", formatter: new ResponseFormatter ( )
         ]
     ]
 
@@ -109,27 +92,6 @@ executions {
         SysdigPlugin.reload()
         message = "Reloaded!\n"
     }
-
-    pluginInfo(httpMethod: 'GET') {
-        def sb = ''<<''
-        sb <<= 'Sysdig Artifactory Plugin Information\n'
-        sb <<= '-----------------\n\n'
-        Globals.SUPPORT_MATRIX.each { k, v ->
-            sb <<= '### ' << k.capitalize() << '\n'
-            v.each { k1, v1 ->
-                sb <<= "${v1.name} - ${v1.description}\n"
-            }
-            sb <<= '\n'
-        }
-        sb <<= '\n\nSysdig Artifactory Plugin Formatters\n'
-        sb <<= '-----------------\n\n'
-        Globals.RESPONSE_FORMATTER_MATRIX.each { k, v ->
-            sb <<= "${k} - ${v.description}\n"
-        }
-        sb <<= '\n'
-        message = sb.toString()
-    }
-
 }
 
 storage {
@@ -196,20 +158,17 @@ def dockerEventDecorator(String event, JsonBuilder data) {
     // New tag creation
     if (event == Globals.SUPPORT_MATRIX.storage.afterCreate.name)
         dockerEventDecoratorWork(Globals.SUPPORT_MATRIX.docker.tagCreated.name, data)
-    // Tag deletion
-    if (event == Globals.SUPPORT_MATRIX.storage.afterDelete.name)
-        dockerEventDecoratorWork(Globals.SUPPORT_MATRIX.docker.tagDeleted.name, data)
 }
 
 def hook(String event, JsonBuilder data) {
     try {
         if (SysdigPlugin.failedToLoadConfig) {
-            log.error("Failed to load configuration from webhook.config.json. Verify that it is valid JSON.")
+            log.error("Failed to load configuration from SysdigSecurePlugin.properties. Verify that it is valid JSON.")
             return
         }
         if (Globals.SUPPORTED_EVENTS.contains(event) && SysdigPlugin.active(event)) {
-            log.trace(data.toString())
             log.info("Plugin being triggered for event '${event}'")
+            log.trace(data.toString())
             SysdigPlugin.run(event, data)
         }
         // Docker decorator should occur after the basic event  even if we don't care about the basic event
@@ -257,24 +216,24 @@ class SysdigPlugin {
         return p.baseUrl
     }
 
-    private String getFormattedJSONString(JsonBuilder json, String event, PluginEndpointDetails webhook) {
-        if (webhook.isDefaultFormat() || !responseFormatters.containsKey(webhook.format)) {
+    private String getFormattedJSONString(JsonBuilder json, String event, SysdigEndpointDetails plugin) {
+        if (plugin.isDefaultFormat() || !responseFormatters.containsKey(plugin.format)) {
             return (responseFormatters['default'].formatter.format(event, json)).toString()
         }
-        return (responseFormatters[webhook.format].formatter.format(event, json)).toString()
+        return (responseFormatters[plugin.format].formatter.format(event, json)).toString()
     }
 
     private void process(String event, Object json) {
         if (active(event)) {
-            def webhookListeners = triggers.get(event)
-            if (webhookListeners) {
+            def pluginListeners = triggers.get(event)
+            if (pluginListeners) {
                 // We need to do this twice to do all async first
-                for (PluginEndpointDetails webhookListener : webhookListeners) {
+                for (SysdigEndpointDetails pluginListener : pluginListeners) {
                     try {
-                        if (webhookListener.isAsync()) {
-                            if (eventPassedFilters(event, json, webhookListener))
+                        if (pluginListener.isAsync()) {
+                            if (eventPassedFilters(event, json, pluginListener))
                                 excutorService.execute(
-                                        new PostTask(webhookListener.url, getFormattedJSONString(json, event, webhookListener)))
+                                        new PostTask(pluginListener.url, pluginListener.token, getFormattedJSONString(json, event, pluginListener)))
                         }
                     } catch (Exception e) {
                         // We don't capture async results
@@ -282,11 +241,11 @@ class SysdigPlugin {
                             e.printStackTrace()
                     }
                 }
-                for (def webhookListener : webhookListeners) {
+                for (def pluginListener : pluginListeners) {
                     try {
-                        if (!webhookListener.isAsync())
-                            if (eventPassedFilters(event, json, webhookListener))
-                                callPost(webhookListener.url, getFormattedJSONString(json, event, webhookListener))
+                        if (!pluginListener.isAsync())
+                            if (eventPassedFilters(event, json, pluginListener))
+                                callPost(pluginListener.url, pluginListener.token, getFormattedJSONString(json, event, pluginListener))
                     } catch (Exception e) {
                         if (debug)
                             e.printStackTrace()
@@ -296,44 +255,44 @@ class SysdigPlugin {
         }
     }
 
-    private boolean eventPassedFilters(String event, Object json, PluginEndpointDetails webhook) {
-        return eventPassedDirectoryFilter(event, json) && eventPassedRepositoryAndPathFilter(event, json, webhook)
+    private boolean eventPassedFilters(String event, Object json, SysdigEndpointDetails plugin) {
+        return eventPassedDirectoryFilter(event, json) && eventPassedRepositoryAndPathFilter(event, json, plugin)
     }
 
-    private boolean eventPassedRepositoryAndPathFilter(String event, Object json, PluginEndpointDetails webhook) {
+    private boolean eventPassedRepositoryAndPathFilter(String event, Object json, SysdigEndpointDetails plugin) {
         boolean passesFilter = true
         def jsonData = null // Don't slurp unless necessary to avoid overhead
         if (event.startsWith("storage") || event.startsWith("docker")) {
             // Check repo if needed
-            if (!webhook.allRepos()) {
+            if (!plugin.allRepos()) {
                 jsonData = new JsonSlurper().parseText(json.toString())
                 def reposInEvent = findDeep(jsonData, REPO_KEY_NAME)
                 boolean found = false
                 if (reposInEvent != null && reposInEvent.size() > 0) {
                     reposInEvent.each {
-                        if (webhook.appliesToRepo(it))
+                        if (plugin.appliesToRepo(it))
                             found = true
                     }
                 }
                 passesFilter = found
             }
-            if (passesFilter && webhook.hasPathFilter()) { // Check path if needed
+            if (passesFilter && plugin.hasPathFilter()) { // Check path if needed
                 if (jsonData == null)
                     jsonData = new JsonSlurper().parseText(json.toString())
                 def matches = false
                 if (event.startsWith("docker")) {
-                    matches = webhook.matchesPathFilter(jsonData.docker.image) &&
-                        webhook.matchesTagFilter(jsonData.docker.tag)
+                    matches = plugin.matchesPathFilter(jsonData.docker.image) &&
+                        plugin.matchesTagFilter(jsonData.docker.tag)
                 } else if (event.startsWith("storage")) {
                     if (Globals.SUPPORT_MATRIX.storage.afterMove.name == event ||
                             Globals.SUPPORT_MATRIX.storage.afterCopy.name == event) {
-                        matches = webhook.matchesPathFilter(jsonData.item.relPath) ||
-                                webhook.matchesPathFilter(jsonData.targetRepoPath.relPath)
+                        matches = plugin.matchesPathFilter(jsonData.item.relPath) ||
+                                plugin.matchesPathFilter(jsonData.targetRepoPath.relPath)
                     } else if (Globals.SUPPORT_MATRIX.storage.afterPropertyCreate.name == event ||
                             Globals.SUPPORT_MATRIX.storage.afterPropertyDelete.name == event) {
-                        matches =  webhook.matchesPathFilter(jsonData.item.relPath)
+                        matches =  plugin.matchesPathFilter(jsonData.item.relPath)
                     } else {
-                        matches =  webhook.matchesPathFilter(jsonData.relPath)
+                        matches =  plugin.matchesPathFilter(jsonData.relPath)
                     }
                 }
                 passesFilter = matches
@@ -351,7 +310,7 @@ class SysdigPlugin {
         return true
     }
 
-    private String callPost(String urlString, String content) {
+    private String callPost(String urlString, String token, String content) {
         def url = new URL(urlString)
         def post = url.openConnection()
         post.method = "POST"
@@ -359,7 +318,7 @@ class SysdigPlugin {
         post.setConnectTimeout(connectionTimeout)
         post.setReadTimeout(connectionTimeout)
         post.setRequestProperty("Content-Type", "application/json")
-        post.setRequestProperty("Authorization", "Bearer bc319b9c-34a5-4dea-b4c6-cab8792344e0")
+        post.setRequestProperty("Authorization", "Bearer ${token}")
         def writer = null, reader = null
 
         try {
@@ -412,9 +371,9 @@ class SysdigPlugin {
         final String CONFIG_FILE_PATH = "${ctx.artifactoryHome.etcDir}/plugins/SysdigSecurePlugin.properties"
         def inputFile = new File(CONFIG_FILE_PATH)
         def config = new JsonSlurper().parseText(inputFile.text)
-        if (config.sysdig) {
-            loadPlugin(config.sysdig)
-            // Potential debug flag
+        if (config) {
+            loadPlugin(config)
+            // Debug flag
             if (config.containsKey("debug"))
                 p.debug = config.debug == true
             // Timeout
@@ -427,30 +386,26 @@ class SysdigPlugin {
     }
 
     private void loadPlugin(Object cfg) {
-        if (cfg.url) {
-            if (cfg.events) {
-                // Registry the plugin details with an event (or set of events)
-                def sysdigDetails = new PluginEndpointDetails()
-                // Async flag
-                if (cfg.containsKey('async'))
-                    sysdigDetails.async = cfg.async
-                // Repositories
-                if (cfg.containsKey('repositories'))
-                    sysdigDetails.repositories = cfg.repositories
-                // Path filter
-                if (cfg.containsKey('path'))
-                    sysdigDetails.setPathFilter(cfg.path)
-                // Events
-                cfg.events.each {
-                    sysdigDetails.url = "${cfg.url}/api/scanning/v1/anchore/images"
-                    sysdigDetails.token = cfg.token
-                    addEvent(it, sysdigDetails)
-                }
-            }
+        if (cfg.sysdig.url && cfg.sysdig.token) {
+            def sysdigDetails = new SysdigEndpointDetails()
+            def event = "docker.tagCreated"
+            // Async
+            if (cfg.containsKey('async'))
+                sysdigDetails.async = cfg.async
+            // Repositories
+            if (cfg.containsKey('repositories'))
+                sysdigDetails.repositories = cfg.repositories
+            // Path filter
+            if (cfg.containsKey('path'))
+                sysdigDetails.setPathFilter(cfg.path)
+            // Events
+            sysdigDetails.url = "${cfg.sysdig.url}/api/scanning/v1/anchore/images?"
+            sysdigDetails.token = cfg.sysdig.token
+            addEvent(event, sysdigDetails)
         }
     }
 
-    private void addEvent(String event, PluginEndpointDetails sysdigDetails) {
+    private void addEvent(String event, SysdigEndpointDetails sysdigDetails) {
         def eventHooks = p.triggers.get(event)
         if (!eventHooks)
             p.triggers.put(event, [sysdigDetails])
@@ -479,11 +434,11 @@ class SysdigPlugin {
         }
     }
 
-    class PluginEndpointDetails {
+    class SysdigEndpointDetails {
         public static String ALL_REPOS = "*"
         def url
         def token
-        def format = null // Default format
+        def format = null // Default
         def repositories = [ALL_REPOS] // All
         def async = true
         Pattern path = null
@@ -545,15 +500,17 @@ class SysdigPlugin {
 
     class PostTask implements Runnable {
         private String url
+        private String token
         private String content
 
-        PostTask(String url, String content) {
+        PostTask(String url, String token, String content) {
             this.url = url
+            this.token = token
             this.content = content
         }
 
         void run() {
-            callPost(url, content)
+            callPost(url, token, content)
         }
     }
 }

@@ -20,9 +20,6 @@ Configuration for the plugin is through SysdigSecurePlugin.properties which has 
    "sysdig":{
       "url":"http<s>://<fqdn/ip>:<port>",
       "token":"<sysdig-secure-token>",
-      "events":[
-         "docker.tagCreated"
-      ],
       "repositories":[
          "*"
       ],
@@ -34,16 +31,15 @@ Configuration for the plugin is through SysdigSecurePlugin.properties which has 
 }
 ```
 
-### Webhook properties
+### Sysdig Configuration
 | Property      | Description   | Required  | Default |
 | ------------- |-------------| ---------| -------|
-| sysdig.url     | The URL to send images for scanning | true      | -       |
-| sysdig.token   | Sysdig auth token | true      | -       |
-| events      | The events to listen to      | true      | -       |
+| sysdig.url     | Sysdig Secure Scanning Engine URL | true      | -       |
+| sysdig.token   | Sysdig Secure API Token | true      | -       |
 | repositories | List of repositories to target for scanning. | False     | * (all repositories)   |
 | path | A path that must match for scanning to be triggered. Accepts wildcard '*'. Do not include repository name in path. | False     | * (all paths)   |
 
-### Global properties
+### Global Configuration
 | Property      | Description   | Required  | Default |
 | ------------- | ------------- | --------- | ------- |
 | debug     | Additional logging | false      | false       |
