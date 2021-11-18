@@ -1,13 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  annotations:
-    meta.helm.sh/release-name: sysdig-admission-controller
-    meta.helm.sh/release-namespace: sysdig-admission-controller
   labels:
     app.kubernetes.io/component: scanner
     app.kubernetes.io/instance: sysdig-admission-controller
-    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: admission-controller
     app.kubernetes.io/version: 3.8.1
   name: sysdig-admission-controller-scanner-external
