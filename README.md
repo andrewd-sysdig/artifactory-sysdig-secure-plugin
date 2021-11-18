@@ -19,12 +19,12 @@ Configuration for the plugin is through SysdigSecurePlugin.properties which has 
 {
    "sysdig":{
       "url":"http<s>://<fqdn/ip>:<port>",
-      "token":"<sysdig-secure-token>",
-      "repositories":[
-         "*"
-      ],
-      "path":"*"
+      "token":"<sysdig-secure-token>"
    },
+   "repositories":[
+      "*"
+   ],
+   "path":"*",
    "baseurl":"<base.artifactory.url>",
    "debug":false,
    "timeout":15000
